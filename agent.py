@@ -42,7 +42,7 @@ class RandomizingAgent(Agent):
         return self.generator.choice([x for x in state.cards_remaining if comp(x, self.last_card)])
 
     def wants_to_switch(self, state: Observation) -> bool:
-        return self.generator.choice((True, False))
+        return True
 
     def notify_round_end(self, state: Observation, drawn_card: Card, looser: 'Agent', drinks: int):
         pass
