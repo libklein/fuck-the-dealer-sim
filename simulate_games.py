@@ -3,10 +3,11 @@ from typing import Optional, Tuple
 import pandas as pd
 import argparse
 from pathlib import Path
+import multiprocessing
 
 from card import Card
 from game import Game
-from agent import RandomizingAgent, Agent
+from agent import RandomizingAgent, Agent, GreedyAgent
 from observation import Observation
 
 
@@ -45,28 +46,33 @@ class PandasLogger:
         rounds_df['game_id'] = self.game_id
         return game_df, rounds_df
 
+def simulate_game(game_id: int):
+    game = Game(players=[GreedyAgent(x, risk_aversity=0.0) for x in range(4)], seed=str(game_id))
 
-def simulate_games(num_games: int = 1000) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    games_df = pd.DataFrame()
-    rounds_df = pd.DataFrame()
+    game_logger = PandasLogger(game=game, game_id=game_id)
 
-    for game_id in range(num_games):
-        game = Game(players=[RandomizingAgent(x) for x in range(4)], seed=str(game_id))
+    for _ in game.play():
+        pass
 
-        game_logger = PandasLogger(game=game, game_id=game_id)
+    return game_logger.to_df()
 
-        for _ in game.play():
-            pass
 
-        game_df, round_df = game_logger.to_df()
-        games_df = games_df.append(game_df, ignore_index=True)
-        rounds_df = rounds_df.append(round_df, ignore_index=True)
+def simulate_games(num_games: int = 1000, num_threads = 1) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    with multiprocessing.Pool(processes=num_threads) as pool:
+        print(f"Simulating {num_games} games using {num_threads} threads!")
+        games = list(pool.imap(simulate_game, range(num_games), chunksize=min(20, num_games//num_threads)))
+
+    games_df = pd.concat((game_df for game_df, _ in games), ignore_index=True, copy=False)
+    rounds_df = pd.concat((round_df for _, round_df in games), ignore_index=True, copy=False)
+
+    print("Done!")
+
 
     return games_df.reset_index(drop=True), rounds_df.reset_index(drop=True)
 
 
-def record_simulations(num_games: int = 10000, output_directory: Path = Path('.')):
-    games_df, rounds_df = simulate_games(num_games=num_games)
+def record_simulations(num_games: int = 10000, output_directory: Path = Path('.'), num_threads: int = 1):
+    games_df, rounds_df = simulate_games(num_games=num_games, num_threads=num_threads)
     games_df.to_csv(output_directory / 'games.csv', index=False)
     rounds_df.to_csv(output_directory / 'rounds.csv', index=False)
 
@@ -76,6 +82,7 @@ if __name__ == '__main__':
                         help='Number of games to simulate')
     parser.add_argument('-o', '--output-directory', type=Path, default=Path('.'), dest='output_directory',
                         help='Output directory for game log')
+    parser.add_argument('-p', '--parallel-threads', type=int, default=multiprocessing.cpu_count(), dest='num_threads')
 
     args = vars(parser.parse_args())
 
@@ -84,4 +91,8 @@ if __name__ == '__main__':
     if args['num_games'] < 0:
         raise argparse.ArgumentError(message='Cannot simulate negative number of games!')
 
-    record_simulations(num_games=args['num_games'], output_directory=args['output_directory'])
+    record_simulations(num_games=args['num_games'], output_directory=args['output_directory'], num_threads=args['num_threads'])
+
+# TODO: Vergleich drinks des dealers gegen drinks als player
+# TODO: Vergleich mit anderen regelen (3 mal testen?)
+# TODO: Vergleich strategien
